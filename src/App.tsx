@@ -610,7 +610,7 @@ const {
           {/* Logo */}
           <div className="flex items-center gap-2 sm:gap-3">
             <div className="w-8 h-8 sm:w-10 sm:h-10 gradient-primary rounded-xl flex items-center justify-center shadow-lg glow-primary">
-            <img src={logo} className="w-8 h-8 object-contain" />
+              <span className="text-lg sm:text-xl">🚀</span>
             </div>
             <div className="hidden sm:block">
               <h1 className="text-sm sm:text-base font-bold text-white">LevelUpCreation</h1>
@@ -1669,117 +1669,205 @@ const Canvas: React.FC = () => {
 
   }
 
+// ================= RENDER ELEMENT =================
 
+const renderElement = (el: CanvasElement) => {
 
-  // ================= RENDER ELEMENT =================
+  const isSelected = selectedIds.includes(el.id)
 
-  const renderElement = (el:CanvasElement)=>{
-
-    const isSelected = selectedIds.includes(el.id)
-
-    const base:React.CSSProperties = {
-      position:"absolute",
-      left:el.x,
-      top:el.y,
-      width:el.width,
-      height:el.height,
-      zIndex:el.zIndex
-    }
-
-
-
-    if(el.type === "shape"){
-
-      const shape = el as ShapeElement
-
-      return(
-        <div
-          key={shape.id}
-          style={base}
-          className={`absolute cursor-move ${isSelected?"ring-2 ring-indigo-500":""}`}
-        >
-          <svg width="100%" height="100%">
-            <path
-              d={getShapePath(shape.shapeType,shape.width,shape.height)}
-              fill={shape.fillColor}
-              stroke={shape.strokeColor}
-              strokeWidth={shape.strokeWidth}
-            />
-          </svg>
-        </div>
-      )
-
-    }
-
-
-
-    if(el.type === "image"){
-
-      const img = el as ImageElement
-
-      return(
-        <img
-          key={img.id}
-          src={img.src}
-          style={base}
-          className="absolute object-cover"
-        />
-      )
-
-    }
-
-
-
-    return null
-
+  const base: React.CSSProperties = {
+    position: "absolute",
+    left: el.x,
+    top: el.y,
+    width: el.width,
+    height: el.height,
+    zIndex: el.zIndex
   }
 
+  // ================= POST IT =================
+  if (el.type === "postit") {
 
+    const postit = el as PostItElement
 
-  // ================= JSX =================
-
-  return(
-    <>
+    return (
       <div
-        id="canvas"
-        ref={canvasRef}
-        className="w-full h-full overflow-hidden"
+        key={postit.id}
         style={{
-          background:"#0f172a",
-          backgroundImage:"radial-gradient(circle, rgba(255,255,255,0.05) 1px, transparent 1px)",
-          backgroundSize:`${20*zoom}px ${20*zoom}px`
+          ...base,
+          background: postit.color,
+          padding: 12,
+          fontSize: postit.fontSize,
+          fontFamily: postit.fontFamily,
+          color: postit.textColor,
+          fontWeight: postit.bold ? "bold" : "normal",
+          fontStyle: postit.italic ? "italic" : "normal"
         }}
-        onMouseDown={handleMouseDown}
-        onMouseMove={handleMouseMove}
-        onMouseUp={handleMouseUp}
-        onWheel={handleWheel}
+        className={`rounded-lg shadow-lg cursor-move ${isSelected ? "ring-2 ring-indigo-500" : ""}`}
       >
-
-        <div
-          className="absolute"
-          style={{
-            transform:`translate(${panX*zoom}px,${panY*zoom}px) scale(${zoom})`,
-            transformOrigin:"center",
-            left:"50%",
-            top:"50%"
-          }}
-        >
-          {elements.sort((a,b)=>a.zIndex-b.zIndex).map(renderElement)}
-        </div>
-
+        {postit.content || "Post-it"}
       </div>
+    )
+  }
 
-      <input
-        ref={imageInputRef}
-        type="file"
-        accept="image/*"
-        onChange={()=>{}}
-        className="hidden"
-      />
-    </>
+  // ================= TEXT =================
+  if (el.type === "text") {
+
+    const text = el as TextElement
+
+    return (
+      <div
+        key={text.id}
+        style={{
+          ...base,
+          fontSize: text.fontSize,
+          fontFamily: text.fontFamily,
+          color: text.color,
+          fontWeight: text.bold ? "bold" : "normal",
+          fontStyle: text.italic ? "italic" : "normal"
+        }}
+        className={`cursor-move ${isSelected ? "ring-2 ring-indigo-500" : ""}`}
+      >
+        {text.content}
+      </div>
+    )
+  }
+
+  // ================= SHAPE =================
+  if (el.type === "shape") {
+
+    const shape = el as ShapeElement
+
+    return (
+      <div
+        key={shape.id}
+        style={base}
+        className={`cursor-move ${isSelected ? "ring-2 ring-indigo-500" : ""}`}
+      >
+        <svg width="100%" height="100%">
+          <path
+            d={getShapePath(shape.shapeType, shape.width, shape.height)}
+            fill={shape.fillColor}
+            stroke={shape.strokeColor}
+            strokeWidth={shape.strokeWidth}
+          />
+        </svg>
+      </div>
+    )
+  }
+
+  // ================= ICON =================
+  if (el.type === "icon") {
+
+    const icon = el as IconElement
+    const IconComponent = Icons[icon.iconType]
+
+    return (
+      <div
+        key={icon.id}
+        style={{
+          ...base,
+          display: "flex",
+          alignItems: "center",
+          justifyContent: "center",
+          color: icon.color
+        }}
+        className={`cursor-move ${isSelected ? "ring-2 ring-indigo-500" : ""}`}
+      >
+        <IconComponent style={{ width: icon.size, height: icon.size }} />
+      </div>
+    )
+  }
+
+  // ================= CODE =================
+  if (el.type === "code") {
+
+    const code = el as CodeElement
+
+    return (
+      <pre
+        key={code.id}
+        style={{
+          ...base,
+          background: "#020617",
+          color: "#22c55e",
+          padding: 10,
+          fontFamily: "monospace",
+          fontSize: code.fontSize,
+          overflow: "auto"
+        }}
+        className={`${isSelected ? "ring-2 ring-indigo-500" : ""}`}
+      >
+        {code.content || "// code"}
+      </pre>
+    )
+  }
+
+  
+// ================= IMAGE =================
+if (el.type === "image") {
+
+  const img = el as ImageElement
+
+  return (
+    <img
+      key={img.id}
+      src={img.src}
+      style={base}
+      className={`object-cover ${isSelected ? "ring-2 ring-indigo-500" : ""}`}
+    />
   )
-
 }
+
+return null
+}
+
+
+
+// ================= JSX =================
+
+return (
+  <>
+    <div
+      id="canvas"
+      ref={canvasRef}
+      className="w-full h-full overflow-hidden"
+      style={{
+        background: "#0f172a",
+        backgroundImage:
+          "radial-gradient(circle, rgba(255,255,255,0.05) 1px, transparent 1px)",
+        backgroundSize: `${20 * zoom}px ${20 * zoom}px`
+      }}
+      onMouseDown={handleMouseDown}
+      onMouseMove={handleMouseMove}
+      onMouseUp={handleMouseUp}
+      onWheel={handleWheel}
+    >
+      <div
+        className="absolute"
+        style={{
+          transform: `translate(${panX * zoom}px, ${panY * zoom}px) scale(${zoom})`,
+          transformOrigin: "center",
+          left: "50%",
+          top: "50%"
+        }}
+      >
+        {elements
+          .sort((a, b) => a.zIndex - b.zIndex)
+          .map((el) => renderElement(el))}
+      </div>
+    </div>
+
+    <input
+      ref={imageInputRef}
+      type="file"
+      accept="image/*"
+      onChange={() => {}}
+      className="hidden"
+    />
+  </>
+);
+}
+
 
 
 // ========== APP ==========
@@ -1787,9 +1875,11 @@ export default function App() {
   return (
     <div className="w-full h-full bg-slate-900 overflow-hidden">
       <Toolbar />
+
       <div className="pt-14 sm:pt-16 h-full">
         <Canvas />
       </div>
+
       <PropertiesPanel />
       <MiniMap />
       <ZoomControls />
