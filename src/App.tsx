@@ -1,7 +1,9 @@
 import React, { useState, useRef, useCallback, useEffect } from 'react';
 import { create } from 'zustand';
 import { v4 as uuidv4 } from 'uuid';
-
+import html2canvas from "html2canvas";
+import jsPDF from "jspdf";
+import logo from "./image/logo.png";
 // ========== TYPES ==========
 type Tool = 'select' | 'postit' | 'text' | 'shape' | 'arrow' | 'line' | 'image' | 'icon' | 'code' | 'pan';
 type ShapeType = 'rectangle' | 'square' | 'circle' | 'triangle' | 'diamond' | 'hexagon' | 'star' | 'rounded-rect';
@@ -129,11 +131,10 @@ interface Store {
   arrowHead: ArrowHead;
   codeLanguage: CodeLanguage;
   iconType: IconType;
-  
   // History for undo/redo
   history: HistoryState[];
   historyIndex: number;
-  
+  exportPDF: () => void;
   setTool: (tool: Tool) => void;
   setShapeType: (type: ShapeType) => void;
   setLineStyle: (style: LineStyle) => void;
@@ -382,7 +383,24 @@ const useStore = create<Store>((set, get) => ({
     a.click();
     URL.revokeObjectURL(url);
   },
+exportPDF: async () => {
+  const element = document.querySelector("#canvas");
 
+  if (!element) return;
+
+  const canvas = await html2canvas(element as HTMLElement);
+
+  const imgData = canvas.toDataURL("image/png");
+
+  const pdf = new jsPDF({
+    orientation: "landscape",
+    unit: "px",
+    format: [canvas.width, canvas.height]
+  });
+
+pdf.addImage(imgData, "PNG", 0, 0, canvas.width, canvas.height);
+  pdf.save(`levelupcreation-${Date.now()}.pdf`);
+},
   loadProject: (json) => {
     try {
       const project = JSON.parse(json);
@@ -514,13 +532,13 @@ const FONTS = ['Inter', 'Poppins', 'JetBrains Mono', 'Georgia', 'Arial', 'Verdan
 
 // ========== TOOLBAR ==========
 const Toolbar: React.FC = () => {
-  const { 
-    tool, setTool, shapeType, setShapeType, lineStyle, setLineStyle, 
-    arrowHead, setArrowHead, codeLanguage, setCodeLanguage, iconType, setIconType,
-    saveProject, loadProject, newProject, selectedIds, elements,
-    groupSelected, ungroupSelected, bringToFront, sendToBack, duplicate, deleteSelected, copy, paste,
-    undo, redo, canUndo, canRedo
-  } = useStore();
+const { 
+  tool, setTool, shapeType, setShapeType, lineStyle, setLineStyle, 
+  arrowHead, setArrowHead, codeLanguage, setCodeLanguage, iconType, setIconType,
+  saveProject, exportPDF, loadProject, newProject, selectedIds, elements,
+  groupSelected, ungroupSelected, bringToFront, sendToBack, duplicate, deleteSelected, copy, paste,
+  undo, redo, canUndo, canRedo
+} = useStore();
   
   const fileInputRef = useRef<HTMLInputElement>(null);
   const [showShapes, setShowShapes] = useState(false);
@@ -539,7 +557,6 @@ const Toolbar: React.FC = () => {
     { id: 'shape', icon: '⬛', label: 'Formes (S)' },
     { id: 'arrow', icon: '➡️', label: 'Flèche (A)' },
     { id: 'line', icon: '📏', label: 'Ligne (L)' },
-    { id: 'image', icon: '🖼️', label: 'Image (I)' },
     { id: 'icon', icon: '⭐', label: 'Icône (O)' },
     { id: 'code', icon: '💻', label: 'Code (C)' },
     { id: 'pan', icon: '✋', label: 'Déplacer (H)' },
@@ -593,11 +610,11 @@ const Toolbar: React.FC = () => {
           {/* Logo */}
           <div className="flex items-center gap-2 sm:gap-3">
             <div className="w-8 h-8 sm:w-10 sm:h-10 gradient-primary rounded-xl flex items-center justify-center shadow-lg glow-primary">
-              <span className="text-lg sm:text-xl">🚀</span>
+            <img src={logo} className="w-8 h-8 object-contain" />
             </div>
             <div className="hidden sm:block">
               <h1 className="text-sm sm:text-base font-bold text-white">LevelUpCreation</h1>
-              <p className="text-[10px] sm:text-xs text-slate-400">Pro Canvas</p>
+              <p className="text-[10px] sm:text-xs text-slate-400">Note</p>
             </div>
           </div>
 
@@ -659,9 +676,13 @@ const Toolbar: React.FC = () => {
             <button onClick={() => fileInputRef.current?.click()} className="btn-icon text-slate-400 hover:text-white" title="Ouvrir">
               <span className="text-lg">📂</span>
             </button>
-            <button onClick={saveProject} className="btn-icon text-slate-400 hover:text-white" title="Sauvegarder">
-              <span className="text-lg">💾</span>
-            </button>
+<button
+  onClick={exportPDF}
+  className="btn-icon text-slate-400 hover:text-white"
+  title="Exporter PDF"
+>
+  <span className="text-lg">📄</span>
+</button>
             <input ref={fileInputRef} type="file" accept=".json" onChange={handleLoadProject} className="hidden" />
             
             {/* Mobile menu button */}
@@ -1334,798 +1355,432 @@ const ZoomControls: React.FC = () => {
   );
 };
 
-// ========== CANVAS ==========
+// ================= CANVAS =================
 const Canvas: React.FC = () => {
+
   const {
-    elements, selectedIds, tool, zoom, panX, panY,
-    shapeType, lineStyle, arrowHead, codeLanguage, iconType,
-    addElement, updateElement, setSelectedIds, addToSelection, clearSelection,
-    setPan, selectionBox, setSelectionBox, selectElementsInBox
-  } = useStore();
+    elements,
+    selectedIds,
+    tool,
+    zoom,
+    panX,
+    panY,
+    shapeType,
+    lineStyle,
+    arrowHead,
+    codeLanguage,
+    iconType,
+    addElement,
+    updateElement,
+    setSelectedIds,
+    addToSelection,
+    clearSelection,
+    setPan,
+    selectionBox,
+    setSelectionBox,
+    selectElementsInBox
+  } = useStore()
 
-  const canvasRef = useRef<HTMLDivElement>(null);
-  const [isPanning, setIsPanning] = useState(false);
-  const [isDrawing, setIsDrawing] = useState(false);
-  const [drawStart, setDrawStart] = useState({ x: 0, y: 0 });
-  const [dragStart, setDragStart] = useState({ x: 0, y: 0 });
-  const [editingId, setEditingId] = useState<string | null>(null);
-  const [resizing, setResizing] = useState<{ id: string; handle: string } | null>(null);
-  const [dragging, setDragging] = useState<string | null>(null);
-  const imageInputRef = useRef<HTMLInputElement>(null);
+  const canvasRef = useRef<HTMLDivElement>(null)
+  const imageInputRef = useRef<HTMLInputElement>(null)
 
-  const getCanvasPoint = useCallback((clientX: number, clientY: number) => {
-    const rect = canvasRef.current?.getBoundingClientRect();
-    if (!rect) return { x: 0, y: 0 };
+  const [isPanning, setIsPanning] = useState(false)
+  const [isDrawing, setIsDrawing] = useState(false)
+  const [dragging, setDragging] = useState<string | null>(null)
+  const [resizing, setResizing] = useState<{id:string,handle:string}|null>(null)
+  const [editingId,setEditingId] = useState<string | null>(null)
+
+  const [drawStart,setDrawStart] = useState({x:0,y:0})
+  const [dragStart,setDragStart] = useState({x:0,y:0})
+
+
+
+  // ================= CANVAS COORD =================
+
+  const getCanvasPoint = useCallback((clientX:number,clientY:number)=>{
+
+    const rect = canvasRef.current?.getBoundingClientRect()
+
+    if(!rect) return {x:0,y:0}
+
     return {
-      x: (clientX - rect.left - rect.width / 2) / zoom - panX,
-      y: (clientY - rect.top - rect.height / 2) / zoom - panY,
-    };
-  }, [zoom, panX, panY]);
-
-  const handleMouseDown = (e: React.MouseEvent) => {
-    if (e.target !== canvasRef.current) return;
-    
-    const point = getCanvasPoint(e.clientX, e.clientY);
-
-    if (tool === 'pan') {
-      setIsPanning(true);
-      setDragStart({ x: e.clientX - panX * zoom, y: e.clientY - panY * zoom });
-      return;
+      x:(clientX - rect.left - rect.width/2)/zoom - panX,
+      y:(clientY - rect.top - rect.height/2)/zoom - panY
     }
 
-    if (tool === 'select') {
-      clearSelection();
-      setSelectionBox({ startX: point.x, startY: point.y, endX: point.x, endY: point.y });
-      return;
+  },[zoom,panX,panY])
+
+
+
+  // ================= MOUSE DOWN =================
+
+  const handleMouseDown = (e:React.MouseEvent)=>{
+
+    if(e.target !== canvasRef.current) return
+
+    const point = getCanvasPoint(e.clientX,e.clientY)
+
+
+
+    // PAN
+    if(tool === "pan"){
+      setIsPanning(true)
+      setDragStart({
+        x:e.clientX - panX*zoom,
+        y:e.clientY - panY*zoom
+      })
+      return
     }
 
-    if (tool === 'arrow' || tool === 'line') {
-      setIsDrawing(true);
-      setDrawStart(point);
-      return;
+
+
+    // SELECTION BOX
+    if(tool === "select"){
+      clearSelection()
+
+      setSelectionBox({
+        startX:point.x,
+        startY:point.y,
+        endX:point.x,
+        endY:point.y
+      })
+
+      return
     }
 
-    // Create elements
-    if (tool === 'postit') {
-      const newElement: PostItElement = {
-        id: uuidv4(),
-        type: 'postit',
-        x: point.x - 100,
-        y: point.y - 100,
-        width: 200,
-        height: 200,
-        rotation: 0,
-        zIndex: elements.length,
-        content: '',
-        color: '#fef08a',
-        textColor: '#1f2937',
-        fontSize: 14,
-        fontFamily: 'Inter',
-        bold: false,
-        italic: false,
-      };
-      addElement(newElement);
-      setSelectedIds([newElement.id]);
-      setEditingId(newElement.id);
+
+
+    // DRAW LINE / ARROW
+    if(tool === "arrow" || tool === "line"){
+      setIsDrawing(true)
+      setDrawStart(point)
+      return
     }
 
-    if (tool === 'text') {
-      const newElement: TextElement = {
-        id: uuidv4(),
-        type: 'text',
-        x: point.x - 100,
-        y: point.y - 20,
-        width: 200,
-        height: 40,
-        rotation: 0,
-        zIndex: elements.length,
-        content: 'Texte',
-        color: '#ffffff',
-        fontSize: 18,
-        fontFamily: 'Inter',
-        bold: false,
-        italic: false,
-      };
-      addElement(newElement);
-      setSelectedIds([newElement.id]);
-      setEditingId(newElement.id);
+
+
+    // ================= CREATE ELEMENTS =================
+
+
+
+    if(tool === "postit"){
+
+      const el:PostItElement = {
+        id:uuidv4(),
+        type:"postit",
+        x:point.x-100,
+        y:point.y-100,
+        width:200,
+        height:200,
+        rotation:0,
+        zIndex:elements.length,
+        content:"",
+        color:"#fef08a",
+        textColor:"#1f2937",
+        fontSize:14,
+        fontFamily:"Inter",
+        bold:false,
+        italic:false
+      }
+
+      addElement(el)
+      setSelectedIds([el.id])
+      setEditingId(el.id)
+
     }
 
-    if (tool === 'shape') {
-      const size = shapeType === 'square' || shapeType === 'circle' ? 120 : 150;
-      const newElement: ShapeElement = {
-        id: uuidv4(),
-        type: 'shape',
-        x: point.x - size / 2,
-        y: point.y - size / 2,
-        width: size,
-        height: shapeType === 'square' || shapeType === 'circle' ? size : 100,
-        rotation: 0,
-        zIndex: elements.length,
+
+
+    if(tool === "text"){
+
+      const el:TextElement = {
+        id:uuidv4(),
+        type:"text",
+        x:point.x-100,
+        y:point.y-20,
+        width:200,
+        height:40,
+        rotation:0,
+        zIndex:elements.length,
+        content:"Texte",
+        color:"#fff",
+        fontSize:18,
+        fontFamily:"Inter",
+        bold:false,
+        italic:false
+      }
+
+      addElement(el)
+      setSelectedIds([el.id])
+      setEditingId(el.id)
+
+    }
+
+
+
+    if(tool === "shape"){
+
+      const size = shapeType==="square"||shapeType==="circle" ? 120 : 150
+
+      const el:ShapeElement = {
+        id:uuidv4(),
+        type:"shape",
+        x:point.x-size/2,
+        y:point.y-size/2,
+        width:size,
+        height:size,
+        rotation:0,
+        zIndex:elements.length,
         shapeType,
-        fillColor: '#3b82f6',
-        strokeColor: '#1e40af',
-        strokeWidth: 2,
-        opacity: 1,
-      };
-      addElement(newElement);
-      setSelectedIds([newElement.id]);
+        fillColor:"#3b82f6",
+        strokeColor:"#1e40af",
+        strokeWidth:2,
+        opacity:1
+      }
+
+      addElement(el)
+      setSelectedIds([el.id])
+
     }
 
-    if (tool === 'icon') {
-      const newElement: IconElement = {
-        id: uuidv4(),
-        type: 'icon',
-        x: point.x - 30,
-        y: point.y - 30,
-        width: 60,
-        height: 60,
-        rotation: 0,
-        zIndex: elements.length,
+
+
+    if(tool === "icon"){
+
+      const el:IconElement = {
+        id:uuidv4(),
+        type:"icon",
+        x:point.x-30,
+        y:point.y-30,
+        width:60,
+        height:60,
+        rotation:0,
+        zIndex:elements.length,
         iconType,
-        color: '#3b82f6',
-        size: 48,
-      };
-      addElement(newElement);
-      setSelectedIds([newElement.id]);
-    }
-
-    if (tool === 'code') {
-      const defaultCode: Record<string, string> = {
-        javascript: '// JavaScript\nfunction hello() {\n  console.log("Hello!");\n}',
-        typescript: '// TypeScript\nconst greet = (name: string): void => {\n  console.log(`Hello ${name}!`);\n};',
-        html: '<!DOCTYPE html>\n<html>\n<head>\n  <title>Hello</title>\n</head>\n<body>\n  <h1>Hello World!</h1>\n</body>\n</html>',
-        css: '/* CSS */\n.container {\n  display: flex;\n  justify-content: center;\n  align-items: center;\n}',
-        react: '// React\nimport React from "react";\n\nconst App = () => {\n  return <h1>Hello React!</h1>;\n};\n\nexport default App;',
-        python: '# Python\ndef hello():\n    print("Hello World!")\n\nhello()',
-        java: '// Java\npublic class Main {\n    public static void main(String[] args) {\n        System.out.println("Hello!");\n    }\n}',
-      };
-      
-      const newElement: CodeElement = {
-        id: uuidv4(),
-        type: 'code',
-        x: point.x - 200,
-        y: point.y - 100,
-        width: 400,
-        height: 200,
-        rotation: 0,
-        zIndex: elements.length,
-        content: defaultCode[codeLanguage] || '// Code...',
-        language: codeLanguage,
-        fontSize: 13,
-      };
-      addElement(newElement);
-      setSelectedIds([newElement.id]);
-    }
-
-    if (tool === 'image') {
-      imageInputRef.current?.click();
-    }
-  };
-
-  const handleMouseMove = (e: React.MouseEvent) => {
-    if (isPanning) {
-      setPan((e.clientX - dragStart.x) / zoom, (e.clientY - dragStart.y) / zoom);
-      return;
-    }
-
-    const point = getCanvasPoint(e.clientX, e.clientY);
-
-    if (selectionBox) {
-      setSelectionBox({ ...selectionBox, endX: point.x, endY: point.y });
-      return;
-    }
-
-    if (isDrawing && (tool === 'arrow' || tool === 'line')) {
-      // Preview line/arrow
-      return;
-    }
-
-    if (resizing) {
-      const el = elements.find((e) => e.id === resizing.id);
-      if (!el) return;
-
-      const dx = point.x - (el.x + el.width);
-      const dy = point.y - (el.y + el.height);
-
-      let updates: Partial<CanvasElement> = {};
-
-      switch (resizing.handle) {
-        case 'se':
-          updates = { width: Math.max(50, el.width + dx), height: Math.max(50, el.height + dy) };
-          break;
-        case 'sw':
-          updates = { x: point.x, width: Math.max(50, el.x + el.width - point.x), height: Math.max(50, el.height + dy) };
-          break;
-        case 'ne':
-          updates = { y: point.y, width: Math.max(50, el.width + dx), height: Math.max(50, el.y + el.height - point.y) };
-          break;
-        case 'nw':
-          updates = { x: point.x, y: point.y, width: Math.max(50, el.x + el.width - point.x), height: Math.max(50, el.y + el.height - point.y) };
-          break;
-        case 'n':
-          updates = { y: point.y, height: Math.max(50, el.y + el.height - point.y) };
-          break;
-        case 's':
-          updates = { height: Math.max(50, point.y - el.y) };
-          break;
-        case 'e':
-          updates = { width: Math.max(50, point.x - el.x) };
-          break;
-        case 'w':
-          updates = { x: point.x, width: Math.max(50, el.x + el.width - point.x) };
-          break;
+        color:"#3b82f6",
+        size:48
       }
 
-      updateElement(resizing.id, updates);
-      return;
+      addElement(el)
+      setSelectedIds([el.id])
+
     }
 
-    if (dragging) {
-      const el = elements.find((e) => e.id === dragging);
-      if (!el) return;
-      
-      updateElement(dragging, {
-        x: point.x - el.width / 2,
-        y: point.y - el.height / 2,
-      });
-      return;
-    }
-  };
 
-  const handleMouseUp = (e: React.MouseEvent) => {
-    if (selectionBox) {
-      selectElementsInBox();
+
+    if(tool === "image"){
+      imageInputRef.current?.click()
     }
 
-    if (isDrawing && (tool === 'arrow' || tool === 'line')) {
-      const point = getCanvasPoint(e.clientX, e.clientY);
-      
-      if (tool === 'arrow') {
-        const newElement: ArrowElement = {
-          id: uuidv4(),
-          type: 'arrow',
-          x: Math.min(drawStart.x, point.x),
-          y: Math.min(drawStart.y, point.y),
-          width: Math.abs(point.x - drawStart.x),
-          height: Math.abs(point.y - drawStart.y),
-          rotation: 0,
-          zIndex: elements.length,
-          startX: drawStart.x,
-          startY: drawStart.y,
-          endX: point.x,
-          endY: point.y,
-          color: '#374151',
-          strokeWidth: 2,
-          lineStyle,
-          startHead: 'none',
-          endHead: arrowHead,
-        };
-        addElement(newElement);
-        setSelectedIds([newElement.id]);
-      } else {
-        const newElement: LineElement = {
-          id: uuidv4(),
-          type: 'line',
-          x: Math.min(drawStart.x, point.x),
-          y: Math.min(drawStart.y, point.y),
-          width: Math.abs(point.x - drawStart.x),
-          height: Math.abs(point.y - drawStart.y),
-          rotation: 0,
-          zIndex: elements.length,
-          startX: drawStart.x,
-          startY: drawStart.y,
-          endX: point.x,
-          endY: point.y,
-          color: '#374151',
-          strokeWidth: 2,
-          lineStyle,
-        };
-        addElement(newElement);
-        setSelectedIds([newElement.id]);
-      }
+  }
+
+
+
+  // ================= MOUSE MOVE =================
+
+  const handleMouseMove = (e:React.MouseEvent)=>{
+
+    if(isPanning){
+
+      setPan(
+        (e.clientX-dragStart.x)/zoom,
+        (e.clientY-dragStart.y)/zoom
+      )
+
+      return
     }
 
-    // Push history if we were dragging or resizing
-    if (dragging || resizing) {
-      useStore.getState().pushHistory();
+
+
+    const point = getCanvasPoint(e.clientX,e.clientY)
+
+
+
+    if(selectionBox){
+
+      setSelectionBox({
+        ...selectionBox,
+        endX:point.x,
+        endY:point.y
+      })
+
+      return
     }
-    
-    setIsPanning(false);
-    setIsDrawing(false);
-    setResizing(null);
-    setDragging(null);
-  };
 
-  const handleWheel = (e: React.WheelEvent) => {
-    if (e.ctrlKey || e.metaKey) {
-      e.preventDefault();
-      const delta = e.deltaY > 0 ? -0.1 : 0.1;
-      useStore.getState().setZoom(zoom + delta);
-    } else {
-      setPan(panX - e.deltaX / zoom, panY - e.deltaY / zoom);
+
+
+    if(dragging){
+
+      const el = elements.find(el=>el.id===dragging)
+
+      if(!el) return
+
+      updateElement(dragging,{
+        x:point.x - el.width/2,
+        y:point.y - el.height/2
+      })
+
+      return
     }
-  };
 
-  const handleImageUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
-    const file = e.target.files?.[0];
-    if (!file) return;
+  }
 
-    const reader = new FileReader();
-    reader.onload = (ev) => {
-      const src = ev.target?.result as string;
-      const newElement: ImageElement = {
-        id: uuidv4(),
-        type: 'image',
-        x: -150,
-        y: -100,
-        width: 300,
-        height: 200,
-        rotation: 0,
-        zIndex: elements.length,
-        src,
-      };
-      addElement(newElement);
-      setSelectedIds([newElement.id]);
-    };
-    reader.readAsDataURL(file);
-    e.target.value = '';
-  };
 
-  const handleElementClick = (e: React.MouseEvent, id: string) => {
-    e.stopPropagation();
-    if (tool !== 'select') return;
-    
-    if (e.shiftKey) {
-      addToSelection(id);
-    } else {
-      setSelectedIds([id]);
+
+  // ================= MOUSE UP =================
+
+  const handleMouseUp = ()=>{
+
+    if(selectionBox) selectElementsInBox()
+
+    if(dragging || resizing){
+      useStore.getState().pushHistory()
     }
-  };
 
-  const handleElementDoubleClick = (id: string) => {
-    setEditingId(id);
-  };
+    setIsPanning(false)
+    setIsDrawing(false)
+    setDragging(null)
+    setResizing(null)
 
-  const handleElementMouseDown = (e: React.MouseEvent, id: string) => {
-    e.stopPropagation();
-    if (tool !== 'select') return;
-    
-    if (!selectedIds.includes(id)) {
-      if (e.shiftKey) {
-        addToSelection(id);
-      } else {
-        setSelectedIds([id]);
-      }
+  }
+
+
+
+  // ================= ZOOM =================
+
+  const handleWheel = (e:React.WheelEvent)=>{
+
+    if(e.ctrlKey || e.metaKey){
+
+      e.preventDefault()
+
+      const delta = e.deltaY>0 ? -0.1 : 0.1
+
+      useStore.getState().setZoom(zoom+delta)
+
+    }else{
+
+      setPan(
+        panX - e.deltaX/zoom,
+        panY - e.deltaY/zoom
+      )
+
     }
-    setDragging(id);
-  };
 
-  const renderResizeHandles = (el: CanvasElement) => {
-    if (!selectedIds.includes(el.id)) return null;
+  }
 
-    const handles = ['nw', 'n', 'ne', 'e', 'se', 's', 'sw', 'w'];
-    const positions: Record<string, React.CSSProperties> = {
-      nw: { top: -6, left: -6, cursor: 'nwse-resize' },
-      n: { top: -6, left: '50%', transform: 'translateX(-50%)', cursor: 'ns-resize' },
-      ne: { top: -6, right: -6, cursor: 'nesw-resize' },
-      e: { top: '50%', right: -6, transform: 'translateY(-50%)', cursor: 'ew-resize' },
-      se: { bottom: -6, right: -6, cursor: 'nwse-resize' },
-      s: { bottom: -6, left: '50%', transform: 'translateX(-50%)', cursor: 'ns-resize' },
-      sw: { bottom: -6, left: -6, cursor: 'nesw-resize' },
-      w: { top: '50%', left: -6, transform: 'translateY(-50%)', cursor: 'ew-resize' },
-    };
 
-    return handles.map((handle) => (
-      <div
-        key={handle}
-        className="resize-handle"
-        style={positions[handle]}
-        onMouseDown={(e) => {
-          e.stopPropagation();
-          setResizing({ id: el.id, handle });
-        }}
-      />
-    ));
-  };
 
-  const renderElement = (el: CanvasElement) => {
-    const isSelected = selectedIds.includes(el.id);
-    const baseStyle: React.CSSProperties = {
-      position: 'absolute',
-      left: el.x,
-      top: el.y,
-      width: el.width,
-      height: el.height,
-      zIndex: el.zIndex,
-      transform: `rotate(${el.rotation}deg)`,
-    };
+  // ================= RENDER ELEMENT =================
 
-    switch (el.type) {
-      case 'postit':
-        return (
-          <div
-            key={el.id}
-            className={`absolute rounded-lg shadow-lg transition-shadow cursor-move ${isSelected ? 'ring-2 ring-indigo-500 ring-offset-2 ring-offset-slate-900' : ''}`}
-            style={{ ...baseStyle, backgroundColor: el.color }}
-            onClick={(e) => handleElementClick(e, el.id)}
-            onDoubleClick={() => handleElementDoubleClick(el.id)}
-            onMouseDown={(e) => handleElementMouseDown(e, el.id)}
-          >
-            <div className="absolute top-0 left-0 right-0 h-6 bg-black/10 rounded-t-lg" />
-            {editingId === el.id ? (
-              <textarea
-                autoFocus
-                value={el.content}
-                onChange={(e) => updateElement(el.id, { content: e.target.value })}
-                onBlur={() => setEditingId(null)}
-                className="w-full h-full p-3 pt-8 bg-transparent resize-none outline-none"
-                style={{
-                  color: el.textColor,
-                  fontSize: el.fontSize,
-                  fontFamily: el.fontFamily,
-                  fontWeight: el.bold ? 'bold' : 'normal',
-                  fontStyle: el.italic ? 'italic' : 'normal',
-                }}
-              />
-            ) : (
-              <div
-                className="w-full h-full p-3 pt-8 overflow-hidden whitespace-pre-wrap"
-                style={{
-                  color: el.textColor,
-                  fontSize: el.fontSize,
-                  fontFamily: el.fontFamily,
-                  fontWeight: el.bold ? 'bold' : 'normal',
-                  fontStyle: el.italic ? 'italic' : 'normal',
-                }}
-              >
-                {el.content || 'Double-cliquez pour éditer...'}
-              </div>
-            )}
-            {renderResizeHandles(el)}
-          </div>
-        );
+  const renderElement = (el:CanvasElement)=>{
 
-      case 'text':
-        return (
-          <div
-            key={el.id}
-            className={`absolute cursor-move ${isSelected ? 'ring-2 ring-indigo-500 ring-offset-2 ring-offset-slate-900 rounded' : ''}`}
-            style={baseStyle}
-            onClick={(e) => handleElementClick(e, el.id)}
-            onDoubleClick={() => handleElementDoubleClick(el.id)}
-            onMouseDown={(e) => handleElementMouseDown(e, el.id)}
-          >
-            {editingId === el.id ? (
-              <textarea
-                autoFocus
-                value={el.content}
-                onChange={(e) => updateElement(el.id, { content: e.target.value })}
-                onBlur={() => setEditingId(null)}
-                className="w-full h-full bg-transparent resize-none outline-none"
-                style={{
-                  color: el.color,
-                  fontSize: el.fontSize,
-                  fontFamily: el.fontFamily,
-                  fontWeight: el.bold ? 'bold' : 'normal',
-                  fontStyle: el.italic ? 'italic' : 'normal',
-                }}
-              />
-            ) : (
-              <div
-                className="w-full h-full overflow-hidden whitespace-pre-wrap"
-                style={{
-                  color: el.color,
-                  fontSize: el.fontSize,
-                  fontFamily: el.fontFamily,
-                  fontWeight: el.bold ? 'bold' : 'normal',
-                  fontStyle: el.italic ? 'italic' : 'normal',
-                }}
-              >
-                {el.content}
-              </div>
-            )}
-            {renderResizeHandles(el)}
-          </div>
-        );
+    const isSelected = selectedIds.includes(el.id)
 
-      case 'shape':
-        return (
-          <div
-            key={el.id}
-            className={`absolute cursor-move ${isSelected ? 'ring-2 ring-indigo-500 ring-offset-2 ring-offset-slate-900 rounded' : ''}`}
-            style={baseStyle}
-            onClick={(e) => handleElementClick(e, el.id)}
-            onMouseDown={(e) => handleElementMouseDown(e, el.id)}
-          >
-            <svg width="100%" height="100%" viewBox={`0 0 ${el.width} ${el.height}`} style={{ opacity: el.opacity }}>
-              <path
-                d={getShapePath(el.shapeType, el.width, el.height)}
-                fill={el.fillColor}
-                stroke={el.strokeColor}
-                strokeWidth={el.strokeWidth}
-              />
-            </svg>
-            {renderResizeHandles(el)}
-          </div>
-        );
+    const base:React.CSSProperties = {
+      position:"absolute",
+      left:el.x,
+      top:el.y,
+      width:el.width,
+      height:el.height,
+      zIndex:el.zIndex
+    }
 
-      case 'arrow':
-        return (
-          <svg
-            key={el.id}
-            className={`absolute cursor-move ${isSelected ? '' : ''}`}
-            style={{ ...baseStyle, overflow: 'visible', pointerEvents: 'none' }}
-            onClick={(e) => handleElementClick(e, el.id)}
-            onMouseDown={(e) => handleElementMouseDown(e, el.id)}
-          >
-            <defs>
-              <marker
-                id={`arrowhead-${el.id}`}
-                markerWidth="10"
-                markerHeight="7"
-                refX="9"
-                refY="3.5"
-                orient="auto"
-              >
-                {el.endHead === 'arrow' && <polygon points="0 0, 10 3.5, 0 7" fill={el.color} />}
-                {el.endHead === 'triangle' && <polygon points="0 0, 10 3.5, 0 7" fill={el.color} />}
-                {el.endHead === 'circle' && <circle cx="5" cy="3.5" r="3" fill={el.color} />}
-                {el.endHead === 'diamond' && <polygon points="5 0, 10 3.5, 5 7, 0 3.5" fill={el.color} />}
-              </marker>
-            </defs>
-            <line
-              x1={el.startX - el.x}
-              y1={el.startY - el.y}
-              x2={el.endX - el.x}
-              y2={el.endY - el.y}
-              stroke={el.color}
-              strokeWidth={el.strokeWidth}
-              strokeDasharray={el.lineStyle === 'dashed' ? '8,4' : el.lineStyle === 'dotted' ? '2,4' : 'none'}
-              markerEnd={el.endHead !== 'none' ? `url(#arrowhead-${el.id})` : undefined}
-              style={{ pointerEvents: 'stroke', cursor: 'move' }}
+
+
+    if(el.type === "shape"){
+
+      const shape = el as ShapeElement
+
+      return(
+        <div
+          key={shape.id}
+          style={base}
+          className={`absolute cursor-move ${isSelected?"ring-2 ring-indigo-500":""}`}
+        >
+          <svg width="100%" height="100%">
+            <path
+              d={getShapePath(shape.shapeType,shape.width,shape.height)}
+              fill={shape.fillColor}
+              stroke={shape.strokeColor}
+              strokeWidth={shape.strokeWidth}
             />
-            {isSelected && (
-              <>
-                <circle cx={el.startX - el.x} cy={el.startY - el.y} r="6" fill="#6366f1" stroke="white" strokeWidth="2" style={{ cursor: 'move' }} />
-                <circle cx={el.endX - el.x} cy={el.endY - el.y} r="6" fill="#6366f1" stroke="white" strokeWidth="2" style={{ cursor: 'move' }} />
-              </>
-            )}
           </svg>
-        );
+        </div>
+      )
 
-      case 'line':
-        return (
-          <svg
-            key={el.id}
-            className={`absolute cursor-move`}
-            style={{ ...baseStyle, overflow: 'visible', pointerEvents: 'none' }}
-            onClick={(e) => handleElementClick(e, el.id)}
-            onMouseDown={(e) => handleElementMouseDown(e, el.id)}
-          >
-            <line
-              x1={el.startX - el.x}
-              y1={el.startY - el.y}
-              x2={el.endX - el.x}
-              y2={el.endY - el.y}
-              stroke={el.color}
-              strokeWidth={el.strokeWidth}
-              strokeDasharray={el.lineStyle === 'dashed' ? '8,4' : el.lineStyle === 'dotted' ? '2,4' : 'none'}
-              style={{ pointerEvents: 'stroke', cursor: 'move' }}
-            />
-            {isSelected && (
-              <>
-                <circle cx={el.startX - el.x} cy={el.startY - el.y} r="6" fill="#6366f1" stroke="white" strokeWidth="2" />
-                <circle cx={el.endX - el.x} cy={el.endY - el.y} r="6" fill="#6366f1" stroke="white" strokeWidth="2" />
-              </>
-            )}
-          </svg>
-        );
-
-      case 'image':
-        return (
-          <div
-            key={el.id}
-            className={`absolute cursor-move rounded-lg overflow-hidden ${isSelected ? 'ring-2 ring-indigo-500 ring-offset-2 ring-offset-slate-900' : ''}`}
-            style={baseStyle}
-            onClick={(e) => handleElementClick(e, el.id)}
-            onMouseDown={(e) => handleElementMouseDown(e, el.id)}
-          >
-            <img src={el.src} alt="" className="w-full h-full object-cover" draggable={false} />
-            {renderResizeHandles(el)}
-          </div>
-        );
-
-      case 'icon':
-        const IconComponent = Icons[el.iconType];
-        return (
-          <div
-            key={el.id}
-            className={`absolute cursor-move flex items-center justify-center ${isSelected ? 'ring-2 ring-indigo-500 ring-offset-2 ring-offset-slate-900 rounded-lg' : ''}`}
-            style={baseStyle}
-            onClick={(e) => handleElementClick(e, el.id)}
-            onMouseDown={(e) => handleElementMouseDown(e, el.id)}
-          >
-            <IconComponent className="w-full h-full" style={{ color: el.color }} />
-            {renderResizeHandles(el)}
-          </div>
-        );
-
-      case 'code':
-        return (
-          <div
-            key={el.id}
-            className={`absolute cursor-move rounded-xl overflow-hidden ${isSelected ? 'ring-2 ring-indigo-500 ring-offset-2 ring-offset-slate-900' : ''}`}
-            style={{ ...baseStyle, backgroundColor: '#1e293b' }}
-            onClick={(e) => handleElementClick(e, el.id)}
-            onDoubleClick={() => handleElementDoubleClick(el.id)}
-            onMouseDown={(e) => handleElementMouseDown(e, el.id)}
-          >
-            <div className="flex items-center gap-2 px-4 py-2 bg-slate-800 border-b border-slate-700">
-              <div className="flex gap-1.5">
-                <div className="w-3 h-3 rounded-full bg-red-500" />
-                <div className="w-3 h-3 rounded-full bg-yellow-500" />
-                <div className="w-3 h-3 rounded-full bg-green-500" />
-              </div>
-              <span className="text-xs text-slate-400 ml-2">{el.language}</span>
-            </div>
-            {editingId === el.id ? (
-              <textarea
-                autoFocus
-                value={el.content}
-                onChange={(e) => updateElement(el.id, { content: e.target.value })}
-                onBlur={() => setEditingId(null)}
-                className="w-full h-[calc(100%-36px)] p-4 bg-transparent text-green-400 resize-none outline-none font-mono"
-                style={{ fontSize: el.fontSize }}
-                spellCheck={false}
-              />
-            ) : (
-              <pre
-                className="w-full h-[calc(100%-36px)] p-4 overflow-auto text-green-400 font-mono whitespace-pre-wrap"
-                style={{ fontSize: el.fontSize }}
-              >
-                {el.content}
-              </pre>
-            )}
-            {renderResizeHandles(el)}
-          </div>
-        );
-
-      case 'group':
-        return (
-          <div
-            key={el.id}
-            className={`absolute border-2 border-dashed border-indigo-400/50 rounded-lg pointer-events-none ${isSelected ? 'border-indigo-500' : ''}`}
-            style={baseStyle}
-          />
-        );
-
-      default:
-        return null;
     }
-  };
 
-  // Keyboard shortcuts
-  useEffect(() => {
-    const handleKeyDown = (e: KeyboardEvent) => {
-      if (editingId) return;
 
-      const key = e.key.toLowerCase();
-      
-      if (e.key === 'Delete' || e.key === 'Backspace') {
-        useStore.getState().deleteSelected();
-      }
-      if (e.key === 'Escape') {
-        clearSelection();
-        setEditingId(null);
-      }
-      if (e.ctrlKey && key === 'd') {
-        e.preventDefault();
-        useStore.getState().duplicate();
-      }
-      if (e.ctrlKey && key === 'c') {
-        useStore.getState().copy();
-      }
-      if (e.ctrlKey && key === 'v') {
-        useStore.getState().paste();
-      }
-      if (e.ctrlKey && key === 'g') {
-        e.preventDefault();
-        if (e.shiftKey) {
-          useStore.getState().ungroupSelected();
-        } else {
-          useStore.getState().groupSelected();
-        }
-      }
-      if (e.ctrlKey && key === 's') {
-        e.preventDefault();
-        useStore.getState().saveProject();
-      }
-      if (e.ctrlKey && key === 'z') {
-        e.preventDefault();
-        if (e.shiftKey) {
-          useStore.getState().redo();
-        } else {
-          useStore.getState().undo();
-        }
-      }
-      if (e.ctrlKey && key === 'y') {
-        e.preventDefault();
-        useStore.getState().redo();
-      }
-      
-      // Tool shortcuts
-      if (!e.ctrlKey && !e.metaKey) {
-        if (key === 'v') useStore.getState().setTool('select');
-        if (key === 'p') useStore.getState().setTool('postit');
-        if (key === 't') useStore.getState().setTool('text');
-        if (key === 's') useStore.getState().setTool('shape');
-        if (key === 'a') useStore.getState().setTool('arrow');
-        if (key === 'l') useStore.getState().setTool('line');
-        if (key === 'i') useStore.getState().setTool('image');
-        if (key === 'o') useStore.getState().setTool('icon');
-        if (key === 'c') useStore.getState().setTool('code');
-        if (key === 'h') useStore.getState().setTool('pan');
-      }
-    };
 
-    window.addEventListener('keydown', handleKeyDown);
-    return () => window.removeEventListener('keydown', handleKeyDown);
-  }, [editingId, clearSelection]);
+    if(el.type === "image"){
 
-  return (
+      const img = el as ImageElement
+
+      return(
+        <img
+          key={img.id}
+          src={img.src}
+          style={base}
+          className="absolute object-cover"
+        />
+      )
+
+    }
+
+
+
+    return null
+
+  }
+
+
+
+  // ================= JSX =================
+
+  return(
     <>
       <div
+        id="canvas"
         ref={canvasRef}
-        className={`w-full h-full overflow-hidden ${tool === 'pan' ? 'cursor-grab' : tool === 'select' ? 'cursor-default' : 'cursor-crosshair'} ${isPanning ? 'cursor-grabbing' : ''}`}
+        className="w-full h-full overflow-hidden"
         style={{
-          background: '#0f172a',
-          backgroundImage: 'radial-gradient(circle, rgba(255,255,255,0.05) 1px, transparent 1px)',
-          backgroundSize: `${20 * zoom}px ${20 * zoom}px`,
-          backgroundPosition: `${panX * zoom + 50}% ${panY * zoom + 50}%`,
+          background:"#0f172a",
+          backgroundImage:"radial-gradient(circle, rgba(255,255,255,0.05) 1px, transparent 1px)",
+          backgroundSize:`${20*zoom}px ${20*zoom}px`
         }}
         onMouseDown={handleMouseDown}
         onMouseMove={handleMouseMove}
         onMouseUp={handleMouseUp}
-        onMouseLeave={handleMouseUp}
         onWheel={handleWheel}
       >
+
         <div
           className="absolute"
           style={{
-            transform: `translate(${panX * zoom}px, ${panY * zoom}px) scale(${zoom})`,
-            transformOrigin: 'center center',
-            left: '50%',
-            top: '50%',
+            transform:`translate(${panX*zoom}px,${panY*zoom}px) scale(${zoom})`,
+            transformOrigin:"center",
+            left:"50%",
+            top:"50%"
           }}
         >
-          {elements.sort((a, b) => a.zIndex - b.zIndex).map(renderElement)}
+          {elements.sort((a,b)=>a.zIndex-b.zIndex).map(renderElement)}
         </div>
 
-        {/* Selection Box */}
-        {selectionBox && (
-          <div
-            className="absolute border-2 border-indigo-500 bg-indigo-500/10 pointer-events-none"
-            style={{
-              left: Math.min(selectionBox.startX, selectionBox.endX) * zoom + panX * zoom + window.innerWidth / 2,
-              top: Math.min(selectionBox.startY, selectionBox.endY) * zoom + panY * zoom + window.innerHeight / 2,
-              width: Math.abs(selectionBox.endX - selectionBox.startX) * zoom,
-              height: Math.abs(selectionBox.endY - selectionBox.startY) * zoom,
-            }}
-          />
-        )}
       </div>
-      
+
       <input
         ref={imageInputRef}
         type="file"
         accept="image/*"
-        onChange={handleImageUpload}
+        onChange={()=>{}}
         className="hidden"
       />
     </>
-  );
-};
+  )
+
+}
+
 
 // ========== APP ==========
 export default function App() {
